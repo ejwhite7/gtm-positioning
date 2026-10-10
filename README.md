@@ -49,6 +49,13 @@ pi install git:github.com/ejwhite7/marketing-positioning-workshop
 
 Then run `/positioning-workshop` (`next`, `copy`, `status`, `cancel`). pi asks to continue when each stage's file is saved, shows progress in the status bar, and writes `state.json` so pi runs also appear in the studio.
 
+## What it runs and connects to
+
+- **Skills and commands** run inside Claude Code. When you ask for research, Claude uses the Firecrawl skills if you have installed them, otherwise Claude Code's WebSearch and WebFetch tools, under your normal Claude Code permissions. The plugin itself sends no data anywhere.
+- **Studio server** (`/marketing-positioning-workshop:studio` runs `studio/server.mjs`): a local Node server bound to 127.0.0.1:4710. It answers only requests addressed to localhost, reads and writes files only inside the project folders you register plus `~/.positioning-workshop/`, and makes no outbound network requests. On macOS, **Use a folder** runs `osascript` to show the system folder picker.
+- **Hook** (`hooks/studio-context.mjs`, on `UserPromptSubmit`): reads `~/.positioning-workshop/request.json`. When the studio has queued a request, it adds that request to your next message once and marks it delivered. It never blocks a message and makes no network requests.
+- **No analytics, telemetry, or credentials.** The plugin asks for no API keys and reads no environment secrets.
+
 ## Layout
 
 ```text
@@ -60,6 +67,10 @@ studio/           local studio server and UI
 extensions/       pi extension
 package.json      pi package manifest
 ```
+
+## License
+
+Proprietary. Free to install and use for your own work; see [LICENSE](LICENSE). The bundled fonts are under the SIL Open Font License 1.1.
 
 ## Credits
 

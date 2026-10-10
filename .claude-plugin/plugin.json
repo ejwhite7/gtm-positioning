@@ -1,5 +1,6 @@
 {
   "name": "marketing-positioning-workshop",
+  "displayName": "Marketing Positioning Workshop by GrowthCast",
   "version": "1.0.0",
   "description": "Marketing Positioning Workshop by GrowthCast: evidence research, Jobs-to-be-Done, positioning, ICP-specific product marketing guidance, and ad or website copy, with a local GrowthCast-branded studio.",
   "author": {
@@ -17,5 +18,6 @@
     "copywriting",
     "product-marketing",
     "growthcast"
-  ]
+  ],
+  "license": "SEE LICENSE IN LICENSE"
 }

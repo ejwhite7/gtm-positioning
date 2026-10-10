@@ -6,8 +6,7 @@
   "keywords": [
     "pi-package"
   ],
-  "license": "UNLICENSED",
-  "private": true,
+  "license": "SEE LICENSE IN LICENSE",
   "pi": {
     "extensions": [
       "./extensions/positioning-workshop.ts"
