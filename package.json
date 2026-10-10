@@ -1,0 +1,22 @@
+{
+  "name": "marketing-positioning-workshop",
+  "version": "1.0.0",
+  "description": "Marketing Positioning Workshop by GrowthCast: evidence research, Jobs-to-be-Done, positioning, ICP-specific product marketing guidance, and ad or website copy, with a local GrowthCast-branded studio.",
+  "type": "module",
+  "keywords": [
+    "pi-package"
+  ],
+  "license": "UNLICENSED",
+  "private": true,
+  "pi": {
+    "extensions": [
+      "./extensions/positioning-workshop.ts"
+    ],
+    "skills": [
+      "./skills/positioning-statement"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "name": "growthcast",
+  "description": "GrowthCast plugins for go-to-market teams.",
+  "owner": {
+    "name": "GrowthCast",
+    "email": "ewhite@growthcast.app"
+  },
+  "plugins": [
+    {
+      "name": "marketing-positioning-workshop",
+      "source": "./",
+      "description": "Marketing Positioning Workshop by GrowthCast: evidence research, Jobs-to-be-Done, positioning, ICP-specific product marketing guidance, and ad or website copy, with a local GrowthCast-branded studio.",
+      "category": "marketing",
+      "homepage": "https://growthcast.app/resources/positioning-wizard"
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "name": "marketing-positioning-workshop",
+  "version": "1.0.0",
+  "description": "Marketing Positioning Workshop by GrowthCast: evidence research, Jobs-to-be-Done, positioning, ICP-specific product marketing guidance, and ad or website copy, with a local GrowthCast-branded studio.",
+  "author": {
+    "name": "GrowthCast",
+    "email": "ewhite@growthcast.app",
+    "url": "https://growthcast.app"
+  },
+  "homepage": "https://growthcast.app/resources/positioning-wizard",
+  "repository": "https://github.com/ejwhite7/marketing-positioning-workshop",
+  "keywords": [
+    "marketing",
+    "positioning",
+    "jobs-to-be-done",
+    "icp",
+    "copywriting",
+    "product-marketing",
+    "growthcast"
+  ]
+}
