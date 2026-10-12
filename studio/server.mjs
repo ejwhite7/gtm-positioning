@@ -1,4 +1,4 @@
-// The Positioning Workshop studio: a local web app with one screen per module (JTBD, positioning, ICP guidance, copy).
+// The GTM Positioning studio: a local web app with one screen per module (JTBD, positioning, ICP guidance, copy).
 // It reads runs from <project>/output/positioning-workshop/<slug>/, and queues a request that hooks/studio-context.mjs
 // hands to Claude with the user's next message. Local only: it listens on 127.0.0.1 and answers only requests
 // addressed to it.
@@ -81,7 +81,7 @@ const pickFolder = () =>
     const start = [join(homedir(), "Code"), homedir()].find(existsSync);
     const script = [
       "activate",
-      `set picked to choose folder with prompt "Choose the project folder for Positioning Workshop outputs" default location (POSIX file ${JSON.stringify(start)})`,
+      `set picked to choose folder with prompt "Choose the project folder for GTM Positioning outputs" default location (POSIX file ${JSON.stringify(start)})`,
       "POSIX path of picked",
     ];
     execFile("osascript", script.flatMap((line) => ["-e", line]), { timeout: 10 * 60e3 }, (err, stdout, stderr) => {
@@ -106,6 +106,53 @@ const readIcps = (file) => {
   }
 };
 
+// The evidence-gaps block every stage document ends with: overall confidence and the weak claims to fix.
+// Same shape as the hosted GrowthCast Positioning Wizard.
+const CONFIDENCE = ["high", "medium", "low"];
+const GAP_SOURCES = ["Document", "Answer", "Customer review", "Community thread", "Competitor page", "Interview or transcript", "Article or report", "Our own page"];
+const clean = (v, max) => (typeof v === "string" ? v.replace(/\s+/g, " ").trim().slice(0, max) : "");
+const level = (v, d) => (CONFIDENCE.includes(clean(v, 10).toLowerCase()) ? clean(v, 10).toLowerCase() : d);
+function parseGaps(text) {
+  const last = [...String(text ?? "").matchAll(/```json\s+evidence-gaps\s*\n([\s\S]*?)```/g)].at(-1);
+  if (!last) return null;
+  let parsed;
+  try {
+    parsed = JSON.parse(last[1]);
+  } catch {
+    return null;
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+  const seen = new Set();
+  const gaps = (Array.isArray(parsed.gaps) ? parsed.gaps : [])
+    .filter((g) => g && typeof g === "object" && clean(g.claim, 1))
+    .slice(0, 6)
+    .map((g, i) => {
+      let id = clean(g.id, 24).replace(/[^\w-]/g, "") || `g${i + 1}`;
+      if (seen.has(id)) id = `${id}-${i + 1}`;
+      seen.add(id);
+      return {
+        id,
+        section: clean(g.section, 120),
+        claim: clean(g.claim, 400),
+        confidence: level(g.confidence, "low"),
+        why: clean(g.why, 400),
+        need: clean(g.need, 400),
+        sources: [...new Set((Array.isArray(g.sources) ? g.sources : []).map((x) => clean(x, 40)).filter((x) => GAP_SOURCES.includes(x)))],
+        searches: (Array.isArray(g.searches) ? g.searches : []).map((x) => clean(x, 160)).filter(Boolean).slice(0, 3),
+        question: clean(g.question, 300),
+      };
+    });
+  const worst = gaps.some((g) => g.confidence === "low") ? "low" : gaps.length ? "medium" : "high";
+  return { confidence: level(parsed.confidence, worst), gaps };
+}
+const readGaps = (file) => {
+  try {
+    return parseGaps(readFileSync(file, "utf8"));
+  } catch {
+    return null;
+  }
+};
+
 const runInfo = (project, slug) => {
   const dir = join(project, RUNS, slug);
   const state = readJson(join(dir, "state.json"), {});
@@ -113,7 +160,13 @@ const runInfo = (project, slug) => {
     .filter((f) => f.endsWith(".md"))
     .map((name) => {
       const s = statSync(join(dir, name));
-      return { name, path: join(RUNS, slug, name), stage: stageOf(name), mtime: s.mtimeMs, size: s.size };
+      // The newest saved copy in versions/ tells the studio what confidence was before the last gap update.
+      const stem = name.replace(/\.md$/, "");
+      const older = existsSync(join(dir, "versions"))
+        ? readdirSync(join(dir, "versions")).filter((v) => v.startsWith(`${stem}.v`)).sort((a, b) => parseInt(a.slice(stem.length + 2)) - parseInt(b.slice(stem.length + 2)))
+        : [];
+      const previous = older.length ? readGaps(join(dir, "versions", older.at(-1)))?.confidence ?? null : null;
+      return { name, path: join(RUNS, slug, name), stage: stageOf(name), mtime: s.mtimeMs, size: s.size, gaps: readGaps(join(dir, name)), previous };
     })
     .sort((a, b) => a.name.localeCompare(b.name));
   const positioning = files.find((f) => f.stage === "positioning");
@@ -128,6 +181,7 @@ const runInfo = (project, slug) => {
       ? { name: "research-notes.md", path: join(RUNS, slug, "evidence", "research-notes.md"), mtime: statSync(join(ev, "research-notes.md")).mtimeMs }
       : null,
     ...readJson(join(ev, "sources.json"), { urls: [], research: null }),
+    gapSources: readJson(join(ev, "gap-sources.json"), []),
   };
   return {
     evidence,
@@ -144,6 +198,7 @@ const runInfo = (project, slug) => {
       existsSync(ev) ? statSync(ev).mtimeMs : 0,
       existsSync(join(ev, "uploads")) ? statSync(join(ev, "uploads")).mtimeMs : 0,
       existsSync(join(ev, "sources.json")) ? statSync(join(ev, "sources.json")).mtimeMs : 0,
+      existsSync(join(ev, "gap-sources.json")) ? statSync(join(ev, "gap-sources.json")).mtimeMs : 0,
     ),
   };
 };
@@ -164,6 +219,21 @@ const runDir = (project, slug) => {
   return dir;
 };
 
+// --- Gap sources: links, uploads and answers added to close a flagged gap in one stage document ---
+const gapTarget = (run, b) => {
+  const file = run.files.find((f) => f.name === b.file);
+  if (!file) throw fail(400, "Unknown document");
+  const gap = file.gaps?.gaps.find((g) => g.id === b.gapId);
+  if (!gap) throw fail(400, "That gap is no longer open");
+  return { file: file.name, module: file.stage, gapId: gap.id, claim: gap.claim };
+};
+const addGapSource = (project, slug, record) => {
+  const path = join(runDir(project, slug), "evidence", "gap-sources.json");
+  mkdirSync(dirname(path), { recursive: true });
+  const id = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+  writeJson(path, [...readJson(path, []), { id, ...record, addedAt: Date.now() }]);
+};
+
 // --- Requests for Claude ---
 const LABELS = {
   research: "Module 00: Evidence and research",
@@ -172,6 +242,7 @@ const LABELS = {
   pmm: "Module 03: ICP product marketing guidance",
   copy: "Module 04: Ad or website copy",
   revise: "Revision",
+  gaps: "Close evidence gaps",
 };
 
 function buildRequest(project, slug, module, brief) {
@@ -198,7 +269,7 @@ function buildRequest(project, slug, module, brief) {
   const tail = [
     "",
     "For web research use the firecrawl skills when available (firecrawl-search, firecrawl-scrape, firecrawl-parse), otherwise WebSearch and WebFetch. Record URLs and access dates.",
-    "Follow the stage rules of the marketing-positioning-workshop:workshop command: honor the skill's evidence and quality gates, update state.json, and pause for the user's review after saving. Do not start another module.",
+    "Follow the stage rules of the gtm-positioning:workshop command: honor the skill's evidence and quality gates, update state.json, and pause for the user's review after saving. Do not start another module.",
   ];
   let body;
   switch (module) {
@@ -231,7 +302,7 @@ function buildRequest(project, slug, module, brief) {
     }
     case "jtbd":
       body = [
-        `Run the marketing-positioning-workshop:jobs-to-be-done-analysis skill for ${scope}.`,
+        `Run the gtm-positioning:jobs-to-be-done-analysis skill for ${scope}.`,
         evidenceLine,
         ...(ev.notes || ev.extracts.length ? ["Treat the gathered evidence as the primary source and say which findings are interview-derived, review-derived, or research-based hypotheses."] : []),
         `Other customer evidence: ${s.sources || (hasEvidence ? "none" : "none provided, so use web research and label findings as hypotheses")}`,
@@ -241,7 +312,7 @@ function buildRequest(project, slug, module, brief) {
       break;
     case "positioning":
       body = [
-        `Run the marketing-positioning-workshop:positioning-statement skill for ${scope}.`,
+        `Run the gtm-positioning:positioning-statement skill for ${scope}.`,
         `JTBD report: ${rel}/01-jtbd-analysis.md`,
         evidenceLine,
         `Save to ${rel}/02-positioning.md, ending with the \`json icp-candidates\` block the skill defines.`,
@@ -251,7 +322,7 @@ function buildRequest(project, slug, module, brief) {
       const icp = s.icpSummary ? `${s.icp} (${s.icpSummary})` : s.icp;
       if (!icp) throw fail(400, "Choose an ICP first");
       body = [
-        `Run the marketing-positioning-workshop:product-marketing-context skill for ${scope}, targeting this ICP: ${icp}.`,
+        `Run the gtm-positioning:product-marketing-context skill for ${scope}, targeting this ICP: ${icp}.`,
         `Use ${rel}/01-jtbd-analysis.md and ${rel}/02-positioning.md as primary evidence. Prefer the auto-draft path and do not re-run JTBD research.`,
         evidenceLine,
         `1. Create or update ${ctxFile}, following the skill's review and confirmation rules before writing.`,
@@ -265,7 +336,7 @@ function buildRequest(project, slug, module, brief) {
       const isAd = brief.kind === "ad";
       const pmm = run.files.find((f) => f.stage === "pmm");
       body = [
-        `Run the marketing-positioning-workshop:website-and-ad-copywriter skill.`,
+        `Run the gtm-positioning:website-and-ad-copywriter skill.`,
         `Copy type: ${isAd ? `ad set for ${brief.format}` : brief.format}`,
         `Scope: ${scope}`,
         `Audience: ${s.icpSummary ? `${s.icp} (${s.icpSummary})` : s.icp}`,
@@ -291,7 +362,32 @@ function buildRequest(project, slug, module, brief) {
         copy: "website-and-ad-copywriter",
         research: "jobs-to-be-done-analysis",
       }[file.stage];
-      body = [`Revise ${join(project, file.path)} using the marketing-positioning-workshop:${skill} skill's standards. Show the changes before overwriting.`];
+      body = [`Revise ${join(project, file.path)} using the gtm-positioning:${skill} skill's standards. Show the changes before overwriting.`];
+      break;
+    }
+    case "gaps": {
+      const file = run.files.find((f) => f.name === brief.file);
+      if (!file?.gaps) throw fail(400, "That document has no confidence check");
+      const own = (ev.gapSources ?? []).filter((g) => g.file === file.name);
+      if (!own.length && !brief.web) throw fail(400, "Add a source to a gap, or let Claude search the web");
+      const skill = { jtbd: "jobs-to-be-done-analysis", positioning: "positioning-statement", pmm: "product-marketing-context", copy: "website-and-ad-copywriter" }[file.stage];
+      const versions = join(rel, "versions");
+      const stem = file.name.replace(/\.md$/, "");
+      const n = (existsSync(versions) ? readdirSync(versions).filter((f) => f.startsWith(`${stem}.v`)).length : 0) + 1;
+      const where = (g) =>
+        g.kind === "url" ? `${g.url} (${g.type})` : g.kind === "answer" ? `${join(project, g.path)} (first-hand answer from the team, not customer evidence)` : join(evDir, "uploads", g.name);
+      body = [
+        `Close the open evidence gaps in ${join(project, file.path)} using the gtm-positioning:${skill} skill's standards.`,
+        `Open gaps (from the document's json evidence-gaps block):\n${file.gaps.gaps.map((g) => `- ${g.id} (${g.confidence}${g.section ? `, ${g.section}` : ""}): ${g.claim}${g.need ? ` Needed: ${g.need}` : ""}${g.searches.length ? ` Searches: ${g.searches.join("; ")}` : ""}`).join("\n") || "- none listed"}`,
+        own.length
+          ? `Sources the user added, labeled G1 onward:\n${own.map((g, i) => `   G${i + 1}. For gap ${g.gapId}: ${where(g)}`).join("\n")}\nRead or scrape each one; note any that fail to load.`
+          : "The user added no sources.",
+        brief.web
+          ? "Also search the web for evidence on the open gaps, starting from their searches (firecrawl-search when available, otherwise WebSearch). Prefer first-party customer language and independent sources, and record URLs and access dates."
+          : "Do not search the web. Work only from these sources and the document.",
+        `First copy the current file to ${join(versions, `${stem}.v${n}.md`)}. Then update ${join(project, file.path)} in place: revise only the claims and sections the new evidence changes, cite the G IDs, change any claim the evidence contradicts, and end with a fresh json evidence-gaps block that reassesses every gap. Never raise confidence without a source that supports it.`,
+        "Finish by reporting the change in confidence and which gaps closed.",
+      ];
       break;
     }
     default:
@@ -304,7 +400,8 @@ function buildRequest(project, slug, module, brief) {
     project,
     run: slug,
     module,
-    summary: `${LABELS[module]} for ${scope}`,
+    stage: module === "gaps" ? run.files.find((f) => f.name === brief.file)?.stage : module,
+    summary: module === "gaps" ? `${LABELS.gaps} in ${brief.file}` : `${LABELS[module]} for ${scope}`,
     context: [...head, ...body, ...notes, ...tail].join("\n"),
   };
 }
@@ -384,7 +481,52 @@ const server = createServer(async (req, res) => {
           if (existsSync(join(dir, name))) unlinkSync(join(dir, name));
           throw err.status ? err : fail(400, "Upload failed");
         }
+        if (q.gapId) addGapSource(project, q.run, { ...gapTarget(runInfo(project, q.run), q), kind: "upload", name });
         return send(res, 200, runInfo(project, q.run));
+      }
+      if (route === "POST /api/gap-source") {
+        const b = await body(req);
+        const project = known(b.project);
+        const dir = runDir(project, b.run);
+        const target = gapTarget(runInfo(project, b.run), b);
+        if (b.kind === "url") {
+          let parsed;
+          try {
+            parsed = new URL(String(b.url ?? "").trim());
+          } catch {
+            throw fail(400, `Not a valid URL: ${b.url}`);
+          }
+          if (!["http:", "https:"].includes(parsed.protocol)) throw fail(400, "Only http and https links");
+          addGapSource(project, b.run, { ...target, kind: "url", url: parsed.href, type: URL_TYPES.includes(b.type) ? b.type : "Other" });
+        } else if (b.kind === "answer") {
+          const text = String(b.text ?? "").trim().slice(0, 8000);
+          if (!text) throw fail(400, "Write an answer first");
+          const answers = join(dir, "evidence", "answers");
+          mkdirSync(answers, { recursive: true });
+          let name = `${slugify(target.file.replace(/\.md$/, ""))}-${target.gapId}.md`;
+          for (let i = 2; existsSync(join(answers, name)); i++) name = `${slugify(target.file.replace(/\.md$/, ""))}-${target.gapId}-${i}.md`;
+          const question = String(b.question ?? "").trim().slice(0, 300) || target.claim;
+          writeFileSync(join(answers, name), `# First-hand answer from the team\n\nThis is the team's own knowledge, not customer evidence.\n\nQuestion: ${question}\n\n${text}\n`);
+          addGapSource(project, b.run, { ...target, kind: "answer", name, path: join(RUNS, b.run, "evidence", "answers", name) });
+        } else throw fail(400, "Choose a link or an answer");
+        return send(res, 200, runInfo(project, b.run));
+      }
+      if (route === "DELETE /api/gap-source") {
+        const b = await body(req);
+        const project = known(b.project);
+        const path = join(runDir(project, b.run), "evidence", "gap-sources.json");
+        const list = readJson(path, []);
+        const gone = list.find((g) => g.id === b.id);
+        if (gone?.kind === "answer") {
+          const file = join(runDir(project, b.run), "evidence", "answers", basename(gone.name));
+          if (existsSync(file)) unlinkSync(file);
+        }
+        if (gone?.kind === "upload") {
+          const file = join(runDir(project, b.run), "evidence", "uploads", basename(gone.name));
+          if (existsSync(file)) unlinkSync(file);
+        }
+        writeJson(path, list.filter((g) => g.id !== b.id));
+        return send(res, 200, runInfo(project, b.run));
       }
       if (route === "DELETE /api/upload") {
         const b = await body(req);
@@ -491,6 +633,6 @@ server.on("error", (err) => {
 });
 server.listen(port, "127.0.0.1", () => {
   const url = `http://127.0.0.1:${port}`;
-  console.log(`Positioning Workshop studio: ${url}`);
+  console.log(`GTM Positioning studio: ${url}`);
   if (args.includes("--open")) spawn("open", [url], { stdio: "ignore", detached: true }).unref();
 });

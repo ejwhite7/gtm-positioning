@@ -121,7 +121,7 @@ function skillPreamble(skill: string): string {
 }
 
 function closing(stage: Stage): string {
-  return `When the ${STAGE_LABELS[stage].toLowerCase()} is saved and I have reviewed it, I will continue with /positioning-workshop next. Do not start the next stage yourself.`;
+  return `When the ${STAGE_LABELS[stage].toLowerCase()} is saved and I have reviewed it, I will continue with /gtm-positioning next. Do not start the next stage yourself.`;
 }
 
 function buildPrompt(state: RunState): string {
@@ -129,7 +129,7 @@ function buildPrompt(state: RunState): string {
   switch (state.stage) {
     case "jtbd":
       return [
-        `Positioning Workshop, stage 1 of 4: ${STAGE_LABELS.jtbd}.`,
+        `GTM Positioning, stage 1 of 4: ${STAGE_LABELS.jtbd}.`,
         skillPreamble("jobs-to-be-done-analysis"),
         "",
         `Product: ${state.product}`,
@@ -143,7 +143,7 @@ function buildPrompt(state: RunState): string {
       ].join("\n");
     case "positioning":
       return [
-        `Positioning Workshop, stage 2 of 4: ${STAGE_LABELS.positioning}.`,
+        `GTM Positioning, stage 2 of 4: ${STAGE_LABELS.positioning}.`,
         skillPreamble("positioning-statement"),
         "",
         `Position ${scope(state)}.`,
@@ -154,7 +154,7 @@ function buildPrompt(state: RunState): string {
       ].join("\n");
     case "pmm":
       return [
-        `Positioning Workshop, stage 3 of 4: ${STAGE_LABELS.pmm}.`,
+        `GTM Positioning, stage 3 of 4: ${STAGE_LABELS.pmm}.`,
         skillPreamble("product-marketing-context"),
         "",
         `Selected ICP: ${icpLabel(state)}`,
@@ -169,7 +169,7 @@ function buildPrompt(state: RunState): string {
     case "copy": {
       const c = state.copy!;
       return [
-        `Positioning Workshop, stage 4 of 4: ${STAGE_LABELS.copy}.`,
+        `GTM Positioning, stage 4 of 4: ${STAGE_LABELS.copy}.`,
         skillPreamble("website-and-ad-copywriter"),
         "",
         `Copy type: ${c.kind === "ad" ? `ad set for ${c.format}` : c.format}`,
@@ -183,7 +183,7 @@ function buildPrompt(state: RunState): string {
         "",
         `Context files: .claude/product-marketing-context.md, the ICP guidance at ${stagePath(state, "pmm")}, and the positioning at ${stagePath(state, "positioning")}. I already confirmed the context, so proceed without the context checkpoint and flag material concerns briefly.`,
         `Save the final copy, strategy map, and verification notes to: ${out}`,
-        "After presenting, I may iterate on it here or start another piece with /positioning-workshop copy.",
+        "After presenting, I may iterate on it here or start another piece with /gtm-positioning copy.",
       ].join("\n");
     }
     default:
@@ -232,7 +232,7 @@ export default function (pi: ExtensionAPI) {
       return;
     }
     const n = STAGES.indexOf(state.stage) + 1;
-    ctx.ui.setStatus("positioning-workshop", `positioning-workshop ${n}/4: ${STAGE_LABELS[state.stage]}`);
+    ctx.ui.setStatus("positioning-workshop", `gtm-positioning ${n}/4: ${STAGE_LABELS[state.stage]}`);
   }
 
   async function startStage(ctx: ExtensionContext, stage: Stage) {
@@ -242,7 +242,7 @@ export default function (pi: ExtensionAPI) {
     promptedFor = undefined;
     save(ctx);
     if (stage === "done") {
-      ctx.ui.notify(`Positioning Workshop finished. Outputs are in ${state.dir}`, "info");
+      ctx.ui.notify(`GTM Positioning finished. Outputs are in ${state.dir}`, "info");
       return;
     }
     await mkdir(join(ctx.cwd, state.dir), { recursive: true });
@@ -352,7 +352,7 @@ export default function (pi: ExtensionAPI) {
 
   async function advance(ctx: ExtensionContext) {
     if (!state) {
-      ctx.ui.notify("No Positioning Workshop run is active. Run /positioning-workshop to start one.", "warning");
+      ctx.ui.notify("No GTM Positioning run is active. Run /gtm-positioning to start one.", "warning");
       return;
     }
     if (!outputReady(state, ctx.cwd) && state.stage !== "done") {
@@ -383,7 +383,7 @@ export default function (pi: ExtensionAPI) {
   }
 
   function describe(): string {
-    if (!state) return "No Positioning Workshop run is active.";
+    if (!state) return "No GTM Positioning run is active.";
     const lines = [
       `Product: ${state.product}${state.feature ? ` / ${state.feature}` : ""}`,
       `Stage: ${STAGE_LABELS[state.stage]}`,
@@ -422,7 +422,7 @@ export default function (pi: ExtensionAPI) {
     try {
       const choice = await ctx.ui.select(`${STAGE_LABELS[state.stage]} saved to ${stagePath(state, state.stage)}`, [
         nextLabel,
-        "Keep refining this stage (run /positioning-workshop next when ready)",
+        "Keep refining this stage (run /gtm-positioning next when ready)",
       ]);
       if (choice === nextLabel) await advance(ctx);
     } finally {
@@ -430,7 +430,7 @@ export default function (pi: ExtensionAPI) {
     }
   });
 
-  pi.registerCommand("positioning-workshop", {
+  pi.registerCommand("gtm-positioning", {
     description: "JTBD, positioning, ICP marketing guidance, then ad or website copy",
     getArgumentCompletions: (prefix: string) =>
       ["start", "next", "status", "copy", "cancel"]
@@ -439,7 +439,7 @@ export default function (pi: ExtensionAPI) {
     handler: async (args, ctx) => {
       const [sub = "", ...rest] = args.trim().split(/\s+/);
       if (!ctx.hasUI) {
-        ctx.ui.notify("positioning-workshop needs an interactive session.", "error");
+        ctx.ui.notify("gtm-positioning needs an interactive session.", "error");
         return;
       }
 
@@ -451,20 +451,20 @@ export default function (pi: ExtensionAPI) {
           return;
         case "copy":
           if (!state?.icp) {
-            ctx.ui.notify("Choose an ICP first. Finish the positioning stage, then run /positioning-workshop next.", "warning");
+            ctx.ui.notify("Choose an ICP first. Finish the positioning stage, then run /gtm-positioning next.", "warning");
             return;
           }
           return startCopy(ctx);
         case "cancel":
           state = undefined;
           save(ctx);
-          ctx.ui.notify("Positioning Workshop run cleared. Output files were kept.", "info");
+          ctx.ui.notify("GTM Positioning run cleared. Output files were kept.", "info");
           return;
       }
 
       const initial = sub === "start" ? rest.join(" ") : args.trim();
       if (state && state.stage !== "done" && sub !== "start") {
-        const choice = await ctx.ui.select(`Positioning Workshop run in progress\n${describe()}`, [
+        const choice = await ctx.ui.select(`GTM Positioning run in progress\n${describe()}`, [
           "Continue to the next stage",
           "Re-run the current stage",
           "Jump to copywriting",
