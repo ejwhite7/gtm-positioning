@@ -262,8 +262,39 @@ For B2C products, adapt or remove the company and decision-maker fields. Do not 
 
 Never overwrite an existing document before the user has reviewed the proposed changes. Show a concise summary or diff for updates.
 
+## Confidence and Evidence Gaps
+
+End the saved document (the run's ICP guidance file, not `.claude/product-marketing-context.md`) with a fenced code block tagged `json evidence-gaps`. The GTM Positioning studio reads it to flag weak claims and ask the user for the sources that would close them. It holds one JSON object:
+
+```json evidence-gaps
+{
+  "confidence": "medium",
+  "gaps": [
+    {
+      "id": "g1",
+      "section": "Heading the claim sits under",
+      "claim": "The claim or finding that is weakly supported",
+      "confidence": "low",
+      "why": "What is missing or thin: no first-party customer language, a single source, or only vendor claims",
+      "need": "The specific source that would raise confidence, written as a request to the user",
+      "sources": ["Interview or transcript", "Customer review", "Answer"],
+      "searches": ["a web search that could find it"],
+      "question": "One question the user could answer directly from what they know"
+    }
+  ]
+}
+```
+
+- `confidence` is your overall confidence in the document: `high`, `medium`, or `low`.
+- List at most six gaps, most decision-critical first, and only claims rated `medium` or `low`. Use an empty `gaps` list when the evidence is strong.
+- `sources` uses only these values, best fit first: `Document`, `Answer`, `Customer review`, `Community thread`, `Competitor page`, `Interview or transcript`, `Article or report`, `Our own page`.
+- `searches` has zero to three queries. `question` may be an empty string.
+- When updating a document, keep the ids of gaps that are still open, drop gaps the new evidence closes, and never raise confidence without evidence.
+- Do not mention the block in the document's prose. It must parse as valid JSON.
+
 ## Quality Standards
 
+- The document ends with a valid `json evidence-gaps` block whose confidence levels match the evidence.
 - Lead with conclusions, then supporting detail.
 - Use active voice and direct, concise language.
 - Do not use em dashes.

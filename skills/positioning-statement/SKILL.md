@@ -125,7 +125,7 @@ Use this structure:
 ## ICP Candidates (Machine Readable)
 ```
 
-End the file with a fenced code block tagged `json icp-candidates` that lists every ICP candidate, so downstream tools can offer the ICPs as choices. Keep the summary to one sentence.
+Near the end of the file, before the evidence-gaps block, add a fenced code block tagged `json icp-candidates` that lists every ICP candidate, so downstream tools can offer the ICPs as choices. Keep the summary to one sentence.
 
 ````markdown
 ```json icp-candidates
@@ -134,6 +134,36 @@ End the file with a fenced code block tagged `json icp-candidates` that lists ev
 ]
 ```
 ````
+
+## Confidence and Evidence Gaps
+
+End the saved document with a fenced code block tagged `json evidence-gaps` after the `json icp-candidates` block, as the very last thing in the file. The GTM Positioning studio reads it to flag weak claims and ask the user for the sources that would close them. It holds one JSON object:
+
+```json evidence-gaps
+{
+  "confidence": "medium",
+  "gaps": [
+    {
+      "id": "g1",
+      "section": "Heading the claim sits under",
+      "claim": "The claim or finding that is weakly supported",
+      "confidence": "low",
+      "why": "What is missing or thin: no first-party customer language, a single source, or only vendor claims",
+      "need": "The specific source that would raise confidence, written as a request to the user",
+      "sources": ["Interview or transcript", "Customer review", "Answer"],
+      "searches": ["a web search that could find it"],
+      "question": "One question the user could answer directly from what they know"
+    }
+  ]
+}
+```
+
+- `confidence` is your overall confidence in the document: `high`, `medium`, or `low`.
+- List at most six gaps, most decision-critical first, and only claims rated `medium` or `low`. Use an empty `gaps` list when the evidence is strong.
+- `sources` uses only these values, best fit first: `Document`, `Answer`, `Customer review`, `Community thread`, `Competitor page`, `Interview or transcript`, `Article or report`, `Our own page`.
+- `searches` has zero to three queries. `question` may be an empty string.
+- When updating a document, keep the ids of gaps that are still open, drop gaps the new evidence closes, and never raise confidence without evidence.
+- Do not mention the block in the document's prose. It must parse as valid JSON.
 
 ## Writing Standards
 
@@ -156,4 +186,5 @@ Before saving, confirm:
 - Each statement names a real alternative and a provable differentiator.
 - The recommendation states its criteria and what would change it.
 - The `json icp-candidates` block parses as valid JSON.
+- The document ends with a valid `json evidence-gaps` block whose confidence levels match the evidence.
 - No em dashes or double hyphens appear in prose.

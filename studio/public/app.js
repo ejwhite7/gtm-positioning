@@ -1,4 +1,4 @@
-// Positioning Workshop studio front end. Plain JS, no build. Polls the local server so files Claude writes appear live.
+// GTM Positioning studio front end. Plain JS, no build. Polls the local server so files Claude writes appear live.
 const $ = (sel) => document.querySelector(sel);
 const esc = (s) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
@@ -127,7 +127,7 @@ const filesFor = (r, id) =>
 const stageDone = (r, id) => (id === "evidence" ? !!r?.evidence?.notes : filesFor(r, id).length > 0);
 const evidenceCount = (r) => (r?.evidence?.uploads.length ?? 0) + (r?.evidence?.urls?.length ?? 0);
 const queuedFor = (id) =>
-  ui.request && !ui.request.delivered && ui.request.project === ui.project && ui.request.run === ui.slug && (ui.request.module === id || (id === "evidence" && ui.request.module === "research"));
+  ui.request && !ui.request.delivered && ui.request.project === ui.project && ui.request.run === ui.slug && (ui.request.module === id || ui.request.stage === id || (id === "evidence" && ui.request.module === "research"));
 
 async function loadProjects() {
   ui.projects = await api("/api/projects");
@@ -204,6 +204,10 @@ function render() {
     return `<button data-module="${m.id}" class="${ui.module === m.id ? "active" : ""}">
       <span class="num">${m.num}</span><span class="name">${m.name}</span>
       <small class="status"><i class="dot ${status[0]}"></i>${status[1]}</small>
+      ${(() => {
+        const conf = m.id === "evidence" ? null : filesFor(r, m.id).at(-1)?.gaps?.confidence;
+        return conf ? `<small class="conf ${conf}">${conf[0].toUpperCase() + conf.slice(1)} confidence</small>` : "";
+      })()}
     </button>`;
   }).join("");
   renderModule(r);
@@ -234,6 +238,7 @@ function renderModule(r) {
       })()}</div>
       <div>
         ${files.length > 1 ? `<div class="docTabs">${files.map((f) => `<button class="choice ${f.path === ui.docPath ? "selected" : ""}" data-doc="${esc(f.path)}">${esc(f.name)}</button>`).join("")}</div>` : ""}
+        ${gapsPanel(r, m)}
         <article class="doc" id="doc">${ui.docPath ? "" : emptyDoc(m)}</article>
       </div>
     </div>`;
@@ -378,11 +383,11 @@ async function saveSources(patch = {}) {
   }
 }
 
-async function uploadFiles(files) {
+async function uploadFiles(files, gap = null) {
   for (const file of files) {
     toast(`Uploading ${file.name}…`);
     try {
-      const res = await fetch(`/api/upload?${qs({ project: ui.project, run: ui.slug, name: file.name })}`, {
+      const res = await fetch(`/api/upload?${qs({ project: ui.project, run: ui.slug, name: file.name, ...(gap ?? {}) })}`, {
         method: "POST",
         headers: { "content-type": "application/octet-stream" },
         body: file,
@@ -449,6 +454,126 @@ function revisePanel(files) {
     <div class="actions"><button class="btn ghost" id="reviseBtn">Queue revision</button></div></section>`;
 }
 
+// --- Confidence and evidence gaps ---
+// Each stage document ends with a json evidence-gaps block (parsed by the server). The panel flags weak claims and
+// lets people add the source each one needs, then queues an update that Claude carries out.
+const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+const idPart = (s) => String(s).replace(/[^\w-]/g, "_");
+
+function gapsPanel(r, m) {
+  if (m.id === "evidence") return "";
+  const f = r.files.find((x) => x.path === ui.docPath);
+  if (!f) return "";
+  const rep = f.gaps;
+  if (!rep) return `<p class="hint gapsNone">This document has no confidence check yet. Re-run the module or queue a revision to add one.</p>`;
+  const own = (r.evidence.gapSources ?? []).filter((g) => g.file === f.name);
+  const fresh = own.filter((g) => g.addedAt > f.mtime);
+  const n = rep.gaps.length;
+  const web = ui.gapWeb?.[f.name] ?? fresh.length === 0;
+  return `<section class="gaps ${rep.confidence}" aria-label="Confidence and evidence gaps">
+    <div class="gapsHead"><span class="conf ${rep.confidence}">${cap(rep.confidence)} confidence</span>${f.previous && f.previous !== rep.confidence ? `<span class="meta">was ${esc(f.previous)} before the last update</span>` : ""}</div>
+    <h3>${n ? `${n} gap${n === 1 ? "" : "s"} would raise confidence` : "No open evidence gaps"}</h3>
+    ${n ? `<p class="hint">Add a source to any gap: a link, a file, or what you know first-hand. Then queue an update. Claude rewrites only what the new evidence changes and keeps the old version in versions/.</p>` : ""}
+    ${rep.gaps.map((g) => gapCard(g, f, own.filter((s) => s.gapId === g.id))).join("")}
+    ${n ? `<div class="gapUpdate">
+      <label class="check"><input type="checkbox" id="gapWeb" data-file="${esc(f.name)}" ${web ? "checked" : ""}><span>Also let Claude search the web for the open gaps</span></label>
+      <button class="btn coral" id="gapUpdateBtn" data-file="${esc(f.name)}" ${fresh.length || web ? "" : "disabled"}>${fresh.length ? `Queue update with ${fresh.length} new source${fresh.length === 1 ? "" : "s"}` : web ? "Queue update with a web search" : "Add a source to update"}</button>
+    </div>` : ""}
+    <input type="file" id="gapFileInput" multiple accept="${ACCEPT}" hidden>
+  </section>`;
+}
+
+function gapCard(g, f, sources) {
+  const key = `${f.name}:${g.id}`;
+  const open = ui.gapOpen?.key === key ? ui.gapOpen.form : null;
+  const idp = idPart(key);
+  const linkTypes = g.sources.filter((s) => URL_TYPES.includes(s));
+  const asks = g.sources.filter((s) => s !== "Answer").map((s) => (s === "Document" ? "a document" : s.toLowerCase()));
+  const attrs = `data-file="${esc(f.name)}" data-gap-id="${esc(g.id)}" data-idp="${idp}"`;
+  return `<article class="gap">
+    <div class="gapHead"><span class="conf ${g.confidence}">${cap(g.confidence)}</span>${g.section ? `<span class="meta">${esc(g.section)}</span>` : ""}</div>
+    <p class="gapClaim">${esc(g.claim)}</p>
+    ${g.why ? `<p class="hint">${esc(g.why)}</p>` : ""}
+    ${g.need ? `<p class="gapNeed"><b>What would help:</b> ${esc(g.need)}</p>` : ""}
+    ${asks.length ? `<p class="hint">Best sources: ${esc(asks.join(", "))}</p>` : ""}
+    ${sources.length ? `<ul class="itemList">${sources
+      .map((s) => `<li><span>${esc(s.kind === "url" ? s.url.replace(/^https?:\/\//, "") : s.name)}<br><span class="meta">${s.kind === "answer" ? "Your answer" : s.kind === "url" ? esc(s.type) : "Document"} · ${s.addedAt > f.mtime ? "new" : "used in this version"}</span></span><button class="linkBtn" data-del-gap="${esc(s.id)}">Remove</button></li>`)
+      .join("")}</ul>` : ""}
+    <div class="gapActions">
+      <button type="button" class="btn ghost small" data-gap-open="link" data-key="${esc(key)}" aria-expanded="${open === "link"}">Add a link</button>
+      <button type="button" class="btn ghost small" data-gap-upload ${attrs}>Upload a file</button>
+      ${g.sources.includes("Answer") || g.question ? `<button type="button" class="btn ghost small" data-gap-open="answer" data-key="${esc(key)}" aria-expanded="${open === "answer"}">Answer it</button>` : ""}
+    </div>
+    ${open === "link" ? `<div class="gapForm">
+      <label><span>URL</span><input id="gapUrl-${idp}" type="url" placeholder="https://"></label>
+      <div class="row"><select id="gapType-${idp}" aria-label="Link type">${URL_TYPES.map((t) => `<option ${t === (linkTypes[0] ?? URL_TYPES[0]) ? "selected" : ""}>${t}</option>`).join("")}</select>
+      <button type="button" class="btn ghost" data-gap-link ${attrs}>Add link</button></div>
+    </div>` : ""}
+    ${open === "answer" ? `<div class="gapForm">
+      <label><span>${esc(g.question || "What do you know about this?")}</span><textarea id="gapAnswer-${idp}" placeholder="Facts, numbers, or what customers have told you"></textarea></label>
+      <p class="hint">Saved as a note. Claude treats it as your first-hand knowledge, not as customer evidence.</p>
+      <div class="actions"><button type="button" class="btn ghost" data-gap-answer data-question="${esc(g.question)}" ${attrs}>Save answer</button></div>
+    </div>` : ""}
+    ${g.searches.length ? `<p class="hint">A web search would start from: ${esc(g.searches.map((q) => `"${q}"`).join(", "))}</p>` : ""}
+  </article>`;
+}
+
+async function gapSource(body, done) {
+  try {
+    const updated = await api("/api/gap-source", { method: "POST", body: { project: ui.project, run: ui.slug, ...body } });
+    ui.runs = ui.runs.map((x) => (x.slug === updated.slug ? updated : x));
+    ui.gapOpen = null;
+    toast(done);
+    render();
+  } catch (e) {
+    toast(e.message, "error");
+  }
+}
+
+function bindGaps() {
+  document.querySelectorAll("[data-gap-open]").forEach((b) =>
+    b.addEventListener("click", () => {
+      const same = ui.gapOpen?.key === b.dataset.key && ui.gapOpen.form === b.dataset.gapOpen;
+      ui.gapOpen = same ? null : { key: b.dataset.key, form: b.dataset.gapOpen };
+      render();
+    }),
+  );
+  document.querySelectorAll("[data-gap-link]").forEach((b) =>
+    b.addEventListener("click", () => {
+      const raw = $(`#gapUrl-${b.dataset.idp}`).value.trim();
+      if (!raw) return;
+      gapSource({ kind: "url", file: b.dataset.file, gapId: b.dataset.gapId, url: /^https?:\/\//i.test(raw) ? raw : `https://${raw}`, type: $(`#gapType-${b.dataset.idp}`).value }, "Link added.");
+    }),
+  );
+  document.querySelectorAll("[data-gap-answer]").forEach((b) =>
+    b.addEventListener("click", () => {
+      const text = $(`#gapAnswer-${b.dataset.idp}`).value.trim();
+      if (!text) return;
+      gapSource({ kind: "answer", file: b.dataset.file, gapId: b.dataset.gapId, question: b.dataset.question, text }, "Answer saved.");
+    }),
+  );
+  const input = $("#gapFileInput");
+  document.querySelectorAll("[data-gap-upload]").forEach((b) =>
+    b.addEventListener("click", () => {
+      ui.gapFile = { file: b.dataset.file, gapId: b.dataset.gapId };
+      input.click();
+    }),
+  );
+  input?.addEventListener("change", (e) => uploadFiles([...e.target.files], ui.gapFile));
+  document.querySelectorAll("[data-del-gap]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      const updated = await api("/api/gap-source", { method: "DELETE", body: { project: ui.project, run: ui.slug, id: b.dataset.delGap } });
+      ui.runs = ui.runs.map((x) => (x.slug === updated.slug ? updated : x));
+      render();
+    }),
+  );
+  $("#gapWeb")?.addEventListener("change", (e) => {
+    ui.gapWeb = { ...(ui.gapWeb ?? {}), [e.target.dataset.file]: e.target.checked };
+    render();
+  });
+  $("#gapUpdateBtn")?.addEventListener("click", (e) => sendRequest("gaps", { file: e.target.dataset.file, web: !!$("#gapWeb")?.checked }));
+}
+
 // --- Behaviour ---
 function bindModule(m, r) {
   document.querySelectorAll("[data-doc]").forEach((b) =>
@@ -480,6 +605,7 @@ function bindModule(m, r) {
     await saveState({ icp: v, icpSummary: "" });
   });
   bindEvidence();
+  bindGaps();
   $("#queueBtn")?.addEventListener("click", () => queue(m.id, r));
   $("#reviseBtn")?.addEventListener("click", () =>
     sendRequest("revise", { file: $("#reviseFile").value, notes: $("#reviseNotes").value }),
@@ -540,7 +666,7 @@ async function loadDoc(force = false) {
   try {
     const data = await api(`/api/file?${qs({ project: ui.project, path: f.path })}`);
     ui.docMtime = data.mtime;
-    el.innerHTML = window.renderMarkdown(data.text, { hideFence: /icp-candidates/ });
+    el.innerHTML = window.renderMarkdown(data.text, { hideFence: /icp-candidates|evidence-gaps/ });
   } catch (e) {
     el.innerHTML = `<p class="hint">${esc(e.message)}</p>`;
   }

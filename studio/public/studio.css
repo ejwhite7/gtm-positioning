@@ -214,3 +214,26 @@ dialog pre { white-space: pre-wrap; font-family: var(--mono); font-size: 12px; b
   .stepper button { border-right: 0; border-bottom: 1px solid var(--ink); }
   .stepper button:last-child { border-bottom: 0; }
 }
+
+/* Confidence and evidence gaps */
+.conf { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 12px; }
+.conf::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--line-2); flex: none; }
+.conf.high::before { background: #3f7d3a; }
+.conf.medium::before { background: #c98a1a; }
+.conf.low::before { background: var(--rust); }
+.gaps { display: grid; gap: 12px; margin-bottom: 14px; padding: 18px 20px; background: var(--paper); border: 1px solid var(--line); border-left: 4px solid var(--line-2); }
+.gaps.low { border-left-color: var(--rust); }
+.gaps.medium { border-left-color: #c98a1a; }
+.gaps.high { border-left-color: #3f7d3a; }
+.gaps h3 { margin: 0; font-size: 18px; letter-spacing: -0.02em; }
+.gapsHead, .gapHead { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
+.gapsNone { margin-bottom: 10px; }
+.gap { display: grid; gap: 8px; padding-top: 14px; border-top: 1px solid var(--line); }
+.gap p { margin: 0; }
+.gapClaim { font-weight: 600; line-height: 1.4; }
+.gapNeed { font-size: 14px; line-height: 1.5; }
+.gapActions { display: flex; flex-wrap: wrap; gap: 6px; }
+.btn.small { padding: 8px 12px; font-size: 12px; }
+.gapForm { display: grid; gap: 10px; padding: 12px; background: #fff; border: 1px solid var(--line); }
+.gapUpdate { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; padding-top: 14px; border-top: 1px solid var(--line); }
+@media (max-width: 560px) { .gapUpdate .btn { width: 100%; } }
