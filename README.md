@@ -15,7 +15,7 @@ GrowthCast clients can also use the hosted version, the Positioning Wizard, in t
 ## Install in Claude Code
 
 ```text
-/plugin marketplace add ejwhite7/gtm-positioning
+/plugin marketplace add ejwhite7/growthcast-plugins
 /plugin install gtm-positioning@growthcast
 ```
 
@@ -69,7 +69,7 @@ Then run `/gtm-positioning` (`next`, `copy`, `status`, `cancel`). pi asks to con
 ## Layout
 
 ```text
-.claude-plugin/   Claude Code plugin and marketplace manifests
+.claude-plugin/   Claude Code plugin manifest
 commands/         workshop and studio commands
 hooks/            hands queued studio requests to Claude
 skills/           the four skills
